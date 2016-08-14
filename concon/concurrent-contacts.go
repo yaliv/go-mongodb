@@ -10,15 +10,19 @@ import (
 	"github.com/yaliv/go-pkg/copydir"
 )
 
-func main() {
-	// The data dir must have these files.
-	contacts := map[string]bool{
+var (
+	// Data source dir.
+	dsDir = "data"
+	// The data source dir must have these files.
+	contacts = map[string]bool{
 		"contacts-au": true,
 		"contacts-ca": true,
 		"contacts-uk": true,
 		"contacts-us": true,
 	}
+)
 
+func main() {
 	fmt.Println(contacts)
 
 	/* for key, val := range contacts {
@@ -26,28 +30,29 @@ func main() {
 		fmt.Println(val)
 	} */
 
-	needDataSource := false
-
 	// Read the data dir for existing files.
-	existingFiles, err := ioutil.ReadDir("data")
+	// Then supply it if needed.
+	if needDataSource() {
+		if !supplyDataSource() {
+			log.Fatalf("Failed to supply data source.")
+		}
+	}
+}
+
+func needDataSource() bool {
+	existingFiles, err := ioutil.ReadDir(dsDir)
 	if err != nil {
 		log.Println(err)
-		needDataSource = true
+		return true
 	}
 	for _, file := range existingFiles {
 		name := strings.Split(file.Name(), ".csv")[0]
 		if _, ok := contacts[name]; !ok {
 			log.Printf("%q is not on the list.\n", file.Name())
-			needDataSource = true
-			break
+			return true
 		}
 	}
-
-	if needDataSource {
-		if !supplyDataSource() {
-			log.Fatalf("Failed to supply data source.")
-		}
-	}
+	return false
 }
 
 func supplyDataSource() bool {
@@ -56,8 +61,8 @@ func supplyDataSource() bool {
 		log.Println("GOPATH not found.")
 		return false
 	} else {
-		dsLoc := gopath + "/src/github.com/yaliv/go-mongodb/concon/data"
-		err := copydir.Copy(dsLoc, "data", true)
+		dsMaster := gopath + "/src/github.com/yaliv/go-mongodb/concon/data"
+		err := copydir.Copy(dsMaster, dsDir, true)
 		if err != nil {
 			log.Println(err)
 			return false
