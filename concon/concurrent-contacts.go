@@ -1,42 +1,46 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/ctessum/macreader"
+	//"github.com/gwenn/yacr"
 	"github.com/yaliv/go-pkg/copydir"
+	"gopkg.in/mgo.v2"
 )
 
-var (
+const (
 	// Data source dir.
 	dsDir = "data"
-	// The data source dir must have these files.
-	contacts = map[string]bool{
-		"contacts-au": true,
-		"contacts-ca": true,
-		"contacts-uk": true,
-		"contacts-us": true,
-	}
+	// Database name.
+	dbName = "banana"
 )
 
+// The data source dir must have these files.
+var contactFiles = map[string]bool{
+	"contacts-au": true,
+	"contacts-ca": true,
+	"contacts-uk": true,
+	"contacts-us": true,
+}
+
 func main() {
-	fmt.Println(contacts)
-
-	/* for key, val := range contacts {
-		fmt.Print(key, ": ")
-		fmt.Println(val)
-	} */
-
-	// Read the data dir for existing files.
+	// Read the data source dir for existing files.
 	// Then supply it if needed.
 	if needDataSource() {
 		if !supplyDataSource() {
-			log.Fatalf("Failed to supply data source.")
+			log.Fatal("Failed to supply data source.")
 		}
 	}
+
+	// Let's move to MongoDB processing.
+	mongoJob()
 }
 
 func needDataSource() bool {
@@ -47,7 +51,7 @@ func needDataSource() bool {
 	}
 	for _, file := range existingFiles {
 		name := strings.Split(file.Name(), ".csv")[0]
-		if _, ok := contacts[name]; !ok {
+		if _, ok := contactFiles[name]; !ok {
 			log.Printf("%q is not on the list.\n", file.Name())
 			return true
 		}
@@ -69,4 +73,76 @@ func supplyDataSource() bool {
 		}
 	}
 	return true
+}
+
+func mongoJob() {
+	/* // Create a session which maintains a pool of socket connections
+	// to our MongoDB.
+	moss, err := mgo.Dial("localhost")
+	if err != nil {
+		log.Fatal("Create Session: ", err)
+	}
+
+	// Set session mode.
+	moss.SetMode(mgo.Monotonic, true) */
+
+	// Create a wait group to manage the Goroutines.
+	var wg sync.WaitGroup
+
+	for contactFile := range contactFiles {
+		//go contactCreate(contactFile, &wg, moss)
+		wg.Add(1)
+		go csvRead(contactFile, &wg)
+	}
+
+	// Wait for all the queries to complete.
+	wg.Wait()
+	log.Println("All Queries Completed.")
+}
+
+func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session) {
+	// Decrement the wait group count so the program knows this
+	// has been completed once the Goroutine exits.
+	defer wg.Done()
+
+	// Request a socket connection from the session to process our query.
+	// Close the session when the Goroutine exits and put the connection back
+	// into the pool.
+	sessCopy := moss.Copy()
+	defer sessCopy.Close()
+
+	// Get a collection to execute the query against.
+	//collection := sessCopy.DB(dbName).C(contactFile)
+}
+
+func csvRead(contactFile string, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	// Open CSV.
+	file, err := os.Open(dsDir + "/" + contactFile + ".csv")
+	if err != nil {
+		log.Fatal("Open CSV: ", err)
+	}
+	defer file.Close()
+
+	// Read CSV, filtered with a CR to LF converter.
+	r := csv.NewReader(macreader.New(file))
+
+	// We need to know the field names.
+	rec, err := r.Read()
+	if err != nil {
+		log.Fatal("Read CSV: ", err)
+	}
+	fmt.Printf("%s: %s\n", contactFile, rec)
+
+	/* r := yacr.DefaultReader(macreader.New(file))
+
+	//var fields []string
+	var f1 string
+
+	n, err := r.ScanRecord(&f1)
+	if err != nil {
+		log.Fatal("Read CSV: ", err)
+	}
+	fmt.Printf("%d %s: %s\n", n, contactFile, f1) */
 }
