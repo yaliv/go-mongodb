@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/ctessum/macreader"
-	//"github.com/gwenn/yacr"
 	"github.com/yaliv/go-pkg/copydir"
 	"gopkg.in/mgo.v2"
 )
@@ -41,6 +40,12 @@ func main() {
 
 	// Let's move to MongoDB processing.
 	mongoJob()
+}
+
+func isFatal(message string, err error) {
+	if err != nil {
+		log.Fatal(message, err)
+	}
 }
 
 func needDataSource() bool {
@@ -76,23 +81,20 @@ func supplyDataSource() bool {
 }
 
 func mongoJob() {
-	/* // Create a session which maintains a pool of socket connections
+	// Create a session which maintains a pool of socket connections
 	// to our MongoDB.
 	moss, err := mgo.Dial("localhost")
-	if err != nil {
-		log.Fatal("Create Session: ", err)
-	}
+	isFatal("Create Session: ", err)
 
 	// Set session mode.
-	moss.SetMode(mgo.Monotonic, true) */
+	moss.SetMode(mgo.Monotonic, true)
 
 	// Create a wait group to manage the Goroutines.
 	var wg sync.WaitGroup
+	wg.Add(len(contactFiles))
 
 	for contactFile := range contactFiles {
-		//go contactCreate(contactFile, &wg, moss)
-		wg.Add(1)
-		go csvRead(contactFile, &wg)
+		go contactCreate(contactFile, &wg, moss)
 	}
 
 	// Wait for all the queries to complete.
@@ -112,37 +114,42 @@ func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session) {
 	defer sessCopy.Close()
 
 	// Get a collection to execute the query against.
-	//collection := sessCopy.DB(dbName).C(contactFile)
-}
+	collection := sessCopy.DB(dbName).C(contactFile)
 
-func csvRead(contactFile string, wg *sync.WaitGroup) {
-	defer wg.Done()
+	// If the records are not empty, do not continue.
+	n, err := collection.Count()
+	isFatal("Count existing records: ", err)
+	if n > 0 {
+		return
+	}
 
 	// Open CSV.
 	file, err := os.Open(dsDir + "/" + contactFile + ".csv")
-	if err != nil {
-		log.Fatal("Open CSV: ", err)
-	}
+	isFatal("Open CSV: ", err)
 	defer file.Close()
 
 	// Read CSV, filtered with a CR to LF converter.
 	r := csv.NewReader(macreader.New(file))
 
 	// We need to know the field names.
-	rec, err := r.Read()
-	if err != nil {
-		log.Fatal("Read CSV: ", err)
+	fields, err := r.Read()
+	isFatal("Read field names: ", err)
+
+	// Prepare a map to accommodate the flexible data structure.
+	contactMap := make(map[string]string)
+
+	// First record.
+	first, err := r.Read()
+	isFatal("Read 1st: ", err)
+	fmt.Printf("%s: %s\n", contactFile, first)
+
+	// Cache record values to the map.
+	for i := 0; i < len(fields); i++ {
+		contactMap[fields[i]] = first[i]
 	}
-	fmt.Printf("%s: %s\n", contactFile, rec)
+	fmt.Printf("%s: %s\n", contactFile, contactMap)
 
-	/* r := yacr.DefaultReader(macreader.New(file))
-
-	//var fields []string
-	var f1 string
-
-	n, err := r.ScanRecord(&f1)
-	if err != nil {
-		log.Fatal("Read CSV: ", err)
-	}
-	fmt.Printf("%d %s: %s\n", n, contactFile, f1) */
+	// Perform Insert.
+	err = collection.Insert(contactMap)
+	isFatal("Insert 1st: ", err)
 }
