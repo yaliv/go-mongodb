@@ -93,8 +93,11 @@ func mongoJob() {
 	var wg sync.WaitGroup
 	wg.Add(len(contactFiles))
 
+	// Create an Insert mutex.
+	ins := Insert{}
+
 	for contactFile := range contactFiles {
-		go contactCreate(contactFile, &wg, moss)
+		go contactCreate(contactFile, &wg, moss, &ins)
 	}
 
 	// Wait for all the queries to complete.
@@ -102,7 +105,11 @@ func mongoJob() {
 	log.Println("All Queries Completed.")
 }
 
-func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session) {
+type Insert struct {
+	sync.Mutex
+}
+
+func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session, ins *Insert) {
 	// Decrement the wait group count so the program knows this
 	// has been completed once the Goroutine exits.
 	defer wg.Done()
@@ -116,11 +123,28 @@ func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session) {
 	// Get a collection to execute the query against.
 	collection := sessCopy.DB(dbName).C(contactFile)
 
-	// If the records are not empty, do not continue.
+	// If data are not empty, confirm overwrite.
 	n, err := collection.Count()
-	isFatal("Count existing records: ", err)
+	isFatal("Count existing data: ", err)
 	if n > 0 {
-		return
+		ins.Lock()
+		var overwrite string
+	waitconfirm:
+		fmt.Print(contactFile, ": data exist. Overwrite? (y/n) ")
+		fmt.Scan(&overwrite)
+		switch overwrite {
+		case "y":
+			ins.Unlock()
+			// Drop collection.
+			err = collection.DropCollection()
+			isFatal("Drop "+contactFile+": ", err)
+		case "n":
+			ins.Unlock()
+			return
+		default:
+			fmt.Println("Not a valid answer!")
+			goto waitconfirm
+		}
 	}
 
 	// Open CSV.
@@ -141,13 +165,13 @@ func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session) {
 	// First record.
 	first, err := r.Read()
 	isFatal("Read 1st: ", err)
-	fmt.Printf("%s: %s\n", contactFile, first)
+	//fmt.Printf("%s: %s\n", contactFile, first)
 
 	// Cache record values to the map.
 	for i := 0; i < len(fields); i++ {
 		contactMap[fields[i]] = first[i]
 	}
-	fmt.Printf("%s: %s\n", contactFile, contactMap)
+	//fmt.Printf("%s: %s\n", contactFile, contactMap)
 
 	// Perform Insert.
 	err = collection.Insert(contactMap)
