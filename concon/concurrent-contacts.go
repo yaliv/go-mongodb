@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -89,12 +90,16 @@ func mongoJob() {
 	// Set session mode.
 	moss.SetMode(mgo.Monotonic, true)
 
+	n := len(contactFiles)
+
 	// Create a wait group to manage the Goroutines.
 	var wg sync.WaitGroup
-	wg.Add(len(contactFiles))
+	wg.Add(n)
 
 	// Create an Insert mutex.
 	ins := Insert{}
+
+	log.Println("Running", n, "queries...\n")
 
 	for contactFile := range contactFiles {
 		go contactCreate(contactFile, &wg, moss, &ins)
@@ -102,7 +107,9 @@ func mongoJob() {
 
 	// Wait for all the queries to complete.
 	wg.Wait()
-	log.Println("All Queries Completed.")
+
+	fmt.Println()
+	log.Println("All queries completed.")
 }
 
 type Insert struct {
@@ -162,18 +169,21 @@ func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session, in
 	// Prepare a map to accommodate the flexible data structure.
 	contactMap := make(map[string]string)
 
-	// First record.
-	first, err := r.Read()
-	isFatal("Read 1st: ", err)
-	//fmt.Printf("%s: %s\n", contactFile, first)
+	for {
+		// Read one row.
+		row, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		isFatal("Read row: ", err)
 
-	// Cache record values to the map.
-	for i := 0; i < len(fields); i++ {
-		contactMap[fields[i]] = first[i]
+		// Cache row values to the map.
+		for i := 0; i < len(fields); i++ {
+			contactMap[fields[i]] = row[i]
+		}
+
+		// Perform Insert.
+		err = collection.Insert(contactMap)
+		isFatal("Insert row: ", err)
 	}
-	//fmt.Printf("%s: %s\n", contactFile, contactMap)
-
-	// Perform Insert.
-	err = collection.Insert(contactMap)
-	isFatal("Insert 1st: ", err)
 }
