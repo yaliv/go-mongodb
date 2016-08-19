@@ -69,6 +69,7 @@ func main() {
 	}
 
 	count2, err := c.Count()
+	fmt.Println()
 	fmt.Println("<database created | insert 3 peoples | total peoples> :", count2)
 
 	// Query one.
@@ -78,6 +79,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	fmt.Println()
 	fmt.Println("<query one | name: Ale> Phone :", result.Phone)
 
 	// Query all [a].
@@ -117,7 +119,7 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("<updated | name : Ale> Phone :", result.Phone)
+	fmt.Println("<updated | name : Cla> Phone :", result.Phone)
 
 	// Remove.
 	err = c.Remove(bson.M{"_id": result.Id})
@@ -126,5 +128,6 @@ func main() {
 	}
 
 	count3, err := c.Count()
+	fmt.Println()
 	fmt.Println("<total peoples after delete> :", count3)
 }
