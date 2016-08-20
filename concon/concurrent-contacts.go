@@ -97,26 +97,22 @@ func mongoJob() {
 	wg.Add(n)
 
 	// Create an Insert mutex.
-	ins := Insert{}
+	var ins sync.Mutex
 
-	log.Println("Running", n, "queries...\n")
+	log.Println("Running", n, "concurrent Inserts...\n")
 
 	for contactFile := range contactFiles {
-		go contactCreate(contactFile, &wg, moss, &ins)
+		go contactCreate(contactFile, moss, &wg, &ins)
 	}
 
-	// Wait for all the queries to complete.
+	// Wait for all the Inserts to complete.
 	wg.Wait()
 
 	fmt.Println()
-	log.Println("All queries completed.")
+	log.Println("All Inserts completed.")
 }
 
-type Insert struct {
-	sync.Mutex
-}
-
-func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session, ins *Insert) {
+func contactCreate(contactFile string, moss *mgo.Session, wg *sync.WaitGroup, ins *sync.Mutex) {
 	// Decrement the wait group count so the program knows this
 	// has been completed once the Goroutine exits.
 	defer wg.Done()
@@ -169,6 +165,10 @@ func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session, in
 	// Prepare a map to accommodate the flexible data structure.
 	contactMap := make(map[string]string)
 
+	// Prepare a bulk operation from the collection.
+	bulk := collection.Bulk()
+	bulk.Unordered()
+
 	for {
 		// Read one row.
 		row, err := r.Read()
@@ -182,8 +182,11 @@ func contactCreate(contactFile string, wg *sync.WaitGroup, moss *mgo.Session, in
 			contactMap[fields[i]] = row[i]
 		}
 
-		// Perform Insert.
-		err = collection.Insert(contactMap)
-		isFatal("Insert row: ", err)
+		// Queue Insert.
+		bulk.Insert(contactMap)
 	}
+
+	// Execute the bulk operation.
+	_, err = bulk.Run()
+	isFatal("Bulk Insert: ", err)
 }
