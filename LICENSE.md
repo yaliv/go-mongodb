@@ -1,5 +1,5 @@
 mgo - MongoDB driver for Go: Copyright (c) 2010-2013 - Gustavo Niemeyer (gustavo@niemeyer.net)  
-My experimental projects: Copyright (c) 2016 Muhammad Yahya Muhaimin.  
+My sample projects: Copyright (c) 2016 Muhammad Yahya Muhaimin.  
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
